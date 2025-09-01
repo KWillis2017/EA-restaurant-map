@@ -1,476 +1,109 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    
-    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
-    
-        <script>
-            L_NO_TOUCH = false;
-            L_DISABLE_3D = false;
-        </script>
-    
-    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
-    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
-    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.6.0/dist/leaflet.js"></script>
-    <script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.6.0/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css"/>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css"/>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css"/>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
-    
-            <meta name="viewport" content="width=device-width,
-                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <style>
-                #map_c5d3ee06894955606c2ee77b2d15259b {
-                    position: relative;
-                    width: 100.0%;
-                    height: 100.0%;
-                    left: 0.0%;
-                    top: 0.0%;
-                }
-            </style>
-        
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.1.0/leaflet.markercluster.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.1.0/MarkerCluster.css"/>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.1.0/MarkerCluster.Default.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EA Community Restaurant Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .header {
+      position: absolute; z-index: 999; left: 12px; top: 12px;
+      background: rgba(255,255,255,0.92); padding: 10px 14px; border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    .header h1 { font-size: 18px; margin: 0 0 6px 0; }
+    .header p { font-size: 12px; margin: 0; color: #444; }
+    .leaflet-popup-content { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .city { font-weight: 700; margin-bottom: 6px; }
+    ul { padding-left: 18px; margin: 6px 0; }
+  </style>
 </head>
 <body>
-    
-    
-            <div class="folium-map" id="map_c5d3ee06894955606c2ee77b2d15259b" ></div>
-        
+  <div id="map"></div>
+  <div class="header">
+    <h1>EA Community Restaurant Map</h1>
+    <p>Data source: Google Sheet (published as CSV). If direct load fails, this page retries via a CORS proxy.</p>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQxaGDGw9eUTPb7IfQvIo2QsU53BVzO1vIQxRQOLfLjkeKUyy6kpBubjqtCJa10TYC2R2pa4xpgQms4/pub?output=csv';
+    const PROXY_PREFIX = "https://cors.isomorphic-git.org/";
+
+    const map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const cluster = L.markerClusterGroup();
+    map.addLayer(cluster);
+
+    function renderRows(rows) {
+      let anyMarker = false;
+      rows.forEach(row => {
+        const city = (row['City'] || '').trim();
+        const latStr = (row['Latitude'] || '').trim();
+        const lonStr = (row['Longitude'] || '').trim();
+        const restaurantsRaw = (row['Restaurants'] || '').trim();
+        if (!city || !latStr || !lonStr || !restaurantsRaw) return;
+        const lat = parseFloat(latStr);
+        const lon = parseFloat(lonStr);
+        if (isNaN(lat) || isNaN(lon)) return;
+        const items = restaurantsRaw.split(/;|\||•/g).map(s => s.trim()).filter(Boolean);
+        const list = items.map(r => `<li>${r}</li>`).join('');
+        const marker = L.marker([lat, lon]).bindPopup(`<div class="city">${city}</div><ul>${list}</ul>`);
+        cluster.addLayer(marker);
+        anyMarker = true;
+      });
+      if (anyMarker) {
+        try { map.fitBounds(cluster.getBounds(), { padding: [30, 30] }); } catch (e) {}
+      } else {
+        alert('No valid rows found. Make sure your sheet has headers: City, Latitude, Longitude, Restaurants');
+      }
+    }
+
+    function loadViaPapa(url) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(url, {
+          download: true,
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => resolve(results.data || []),
+          error: (err) => reject(err)
+        });
+      });
+    }
+
+    async function init() {
+      const csvURL = SHEET_CSV_URL + (SHEET_CSV_URL.includes('?') ? '&' : '?') + 'cacheBust=' + Date.now();
+      try {
+        const rows = await loadViaPapa(csvURL);
+        renderRows(rows);
+      } catch (e1) {
+        console.warn('Direct CSV load failed, retrying via proxy...', e1);
+        try {
+          const proxied = PROXY_PREFIX + csvURL;
+          const resp = await fetch(proxied);
+          const text = await resp.text();
+          const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+          renderRows(parsed.data || []);
+        } catch (e2) {
+          console.error('CSV load failed even via proxy:', e2);
+          alert('Could not load the Google Sheet. If your Workspace blocks Publish-to-Web, share the sheet as "Anyone with the link: Viewer" and use the /export?format=csv&gid=... URL instead.');
+        }
+      }
+    }
+
+    init();
+  </script>
 </body>
-<script>
-    
-    
-            var map_c5d3ee06894955606c2ee77b2d15259b = L.map(
-                "map_c5d3ee06894955606c2ee77b2d15259b",
-                {
-                    center: [20.0, 0.0],
-                    crs: L.CRS.EPSG3857,
-                    zoom: 2,
-                    zoomControl: true,
-                    preferCanvas: false,
-                }
-            );
-
-            
-
-        
-    
-            var tile_layer_9bf6a09fa75ee3a73f6c520d833fb414 = L.tileLayer(
-                "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                {"attribution": "Data by \u0026copy; \u003ca href=\"http://openstreetmap.org\"\u003eOpenStreetMap\u003c/a\u003e, under \u003ca href=\"http://www.openstreetmap.org/copyright\"\u003eODbL\u003c/a\u003e.", "detectRetina": false, "maxNativeZoom": 18, "maxZoom": 18, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
-            ).addTo(map_c5d3ee06894955606c2ee77b2d15259b);
-        
-    
-            var marker_cluster_98c4eedff8e099e43ba2e83c20c369a0 = L.markerClusterGroup(
-                {}
-            );
-            map_c5d3ee06894955606c2ee77b2d15259b.addLayer(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-            var marker_991e9699d4d0a1ecdf39a9a60b4d212c = L.marker(
-                [33.749, -84.388],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_4462775ac0462234c9afca0d043d006b = L.popup({"maxWidth": "100%"});
-
-        
-            var html_7afd63844595164247bba66c392809d4 = $(`<div id="html_7afd63844595164247bba66c392809d4" style="width: 100.0%; height: 100.0%;"><b>Atlanta, GA</b><br>Forza Storico - Italian<br>South City Kitchen - Southern<br>Little Alley Steak - Steakhouse</div>`)[0];
-            popup_4462775ac0462234c9afca0d043d006b.setContent(html_7afd63844595164247bba66c392809d4);
-        
-
-        marker_991e9699d4d0a1ecdf39a9a60b4d212c.bindPopup(popup_4462775ac0462234c9afca0d043d006b)
-        ;
-
-        
-    
-    
-            var marker_c53d034073c7d4e421c3c2c2f59bb509 = L.marker(
-                [43.397, -80.311],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_452cf88de6f178328980f98c273d570f = L.popup({"maxWidth": "100%"});
-
-        
-            var html_2d6970eff3fdd924702437adcf665c43 = $(`<div id="html_2d6970eff3fdd924702437adcf665c43" style="width: 100.0%; height: 100.0%;"><b>Cambridge, ON, Canada</b><br>Cambridge Mill<br>Langdon Hall<br>Blackshop</div>`)[0];
-            popup_452cf88de6f178328980f98c273d570f.setContent(html_2d6970eff3fdd924702437adcf665c43);
-        
-
-        marker_c53d034073c7d4e421c3c2c2f59bb509.bindPopup(popup_452cf88de6f178328980f98c273d570f)
-        ;
-
-        
-    
-    
-            var marker_1adf3b706400d37bc5d6250eae1199aa = L.marker(
-                [34.052, -118.244],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_b2d2f7e8e4636447e9b9dd9a8910ac9a = L.popup({"maxWidth": "100%"});
-
-        
-            var html_fec05416fcb515aae16428ceb938e8c3 = $(`<div id="html_fec05416fcb515aae16428ceb938e8c3" style="width: 100.0%; height: 100.0%;"><b>Los Angeles, CA</b><br>Fixins Soul Kitchen - Southern<br>Red O Restaurant - Mexican<br>Palms Thai - Thai</div>`)[0];
-            popup_b2d2f7e8e4636447e9b9dd9a8910ac9a.setContent(html_fec05416fcb515aae16428ceb938e8c3);
-        
-
-        marker_1adf3b706400d37bc5d6250eae1199aa.bindPopup(popup_b2d2f7e8e4636447e9b9dd9a8910ac9a)
-        ;
-
-        
-    
-    
-            var marker_d66b5c9a95b67835bb21f6d752a4d537 = L.marker(
-                [13.1939, -59.5432],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_fb23d29b84dac00d085cef3a64bed1ef = L.popup({"maxWidth": "100%"});
-
-        
-            var html_62013f415d721e178544a0a9a130da1c = $(`<div id="html_62013f415d721e178544a0a9a130da1c" style="width: 100.0%; height: 100.0%;"><b>Barbados</b><br>Champers<br>Tides<br>The Grille Restaurant @ Hilton Barbados Resort</div>`)[0];
-            popup_fb23d29b84dac00d085cef3a64bed1ef.setContent(html_62013f415d721e178544a0a9a130da1c);
-        
-
-        marker_d66b5c9a95b67835bb21f6d752a4d537.bindPopup(popup_fb23d29b84dac00d085cef3a64bed1ef)
-        ;
-
-        
-    
-    
-            var marker_c586167799b2030cb693b06241393043 = L.marker(
-                [28.538, -81.379],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_a10f3b2f2e1c31c7ec652bb367a90ad2 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_ad5a1c0fe0162472c158eb4b8db1933b = $(`<div id="html_ad5a1c0fe0162472c158eb4b8db1933b" style="width: 100.0%; height: 100.0%;"><b>Orlando, FL</b><br>Ravenous Pig<br>Enzo’s on the Lake<br>Prato</div>`)[0];
-            popup_a10f3b2f2e1c31c7ec652bb367a90ad2.setContent(html_ad5a1c0fe0162472c158eb4b8db1933b);
-        
-
-        marker_c586167799b2030cb693b06241393043.bindPopup(popup_a10f3b2f2e1c31c7ec652bb367a90ad2)
-        ;
-
-        
-    
-    
-            var marker_cae8a2c3c7d3e00dc7e93e1971e6cfd0 = L.marker(
-                [-26.1076, 28.0567],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_f827156a0e4367bc5afacb1e087d9204 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_d6ead2c1a455008133dac6d6fc23dcfb = $(`<div id="html_d6ead2c1a455008133dac6d6fc23dcfb" style="width: 100.0%; height: 100.0%;"><b>Sandton, Johannesburg, South Africa</b><br>Solo - Fine Dining<br>TANG - Asian<br>Marble - Cocktails<br>The Grillhouse - Steak<br>Pigalle - Portuguese</div>`)[0];
-            popup_f827156a0e4367bc5afacb1e087d9204.setContent(html_d6ead2c1a455008133dac6d6fc23dcfb);
-        
-
-        marker_cae8a2c3c7d3e00dc7e93e1971e6cfd0.bindPopup(popup_f827156a0e4367bc5afacb1e087d9204)
-        ;
-
-        
-    
-    
-            var marker_e4434b74068f3f1191397ea10eb10e1a = L.marker(
-                [42.2917, -85.5872],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_0338446ec03cd8599b403f5a546c68f5 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_970e3ac4467dcab2d255db2f26f7a54d = $(`<div id="html_970e3ac4467dcab2d255db2f26f7a54d" style="width: 100.0%; height: 100.0%;"><b>Kalamazoo/Portage, MI</b><br>Brick and Brine<br>Rustica<br>Stamped Robin<br>Dabney & Co<br>Bird Dog</div>`)[0];
-            popup_0338446ec03cd8599b403f5a546c68f5.setContent(html_970e3ac4467dcab2d255db2f26f7a54d);
-        
-
-        marker_e4434b74068f3f1191397ea10eb10e1a.bindPopup(popup_0338446ec03cd8599b403f5a546c68f5)
-        ;
-
-        
-    
-    
-            var marker_085a63fc310aef7a8a46fcd855b2d255 = L.marker(
-                [40.7128, -74.006],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_076157369952dd989ea352d3149b2b82 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_8cee63351770aadefb68968d29131185 = $(`<div id="html_8cee63351770aadefb68968d29131185" style="width: 100.0%; height: 100.0%;"><b>New York, NY</b><br>Cote<br>Upland<br>Koi<br>BLACKBARN<br>Sagaponack<br>Zero Otto Nove<br>Zuma<br>Ocean Prime<br>Quality Bistro<br>Porter House Bar and Grill<br>Estiatorio Milos Midtown</div>`)[0];
-            popup_076157369952dd989ea352d3149b2b82.setContent(html_8cee63351770aadefb68968d29131185);
-        
-
-        marker_085a63fc310aef7a8a46fcd855b2d255.bindPopup(popup_076157369952dd989ea352d3149b2b82)
-        ;
-
-        
-    
-    
-            var marker_808299751adcdc88d61d17a2247fc5df = L.marker(
-                [21.3069, -157.8583],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_96d28c506483575f13f3dc2bb2c56f7b = L.popup({"maxWidth": "100%"});
-
-        
-            var html_66f709372bce3be2f89f5afda5815c25 = $(`<div id="html_66f709372bce3be2f89f5afda5815c25" style="width: 100.0%; height: 100.0%;"><b>Honolulu, HI</b><br>Banzai Sushi<br>Nico's<br>Tsurutontan</div>`)[0];
-            popup_96d28c506483575f13f3dc2bb2c56f7b.setContent(html_66f709372bce3be2f89f5afda5815c25);
-        
-
-        marker_808299751adcdc88d61d17a2247fc5df.bindPopup(popup_96d28c506483575f13f3dc2bb2c56f7b)
-        ;
-
-        
-    
-    
-            var marker_8a01f2a165623232315bc0dccc08371d = L.marker(
-                [13.7563, 100.5018],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_1681daa5afd1fe903ff13cf51c811e8b = L.popup({"maxWidth": "100%"});
-
-        
-            var html_125a8ce8eb2b487d0026fee1ea726069 = $(`<div id="html_125a8ce8eb2b487d0026fee1ea726069" style="width: 100.0%; height: 100.0%;"><b>Bangkok, Thailand</b><br>Sorn<br>Suhring<br>Mezzaluna</div>`)[0];
-            popup_1681daa5afd1fe903ff13cf51c811e8b.setContent(html_125a8ce8eb2b487d0026fee1ea726069);
-        
-
-        marker_8a01f2a165623232315bc0dccc08371d.bindPopup(popup_1681daa5afd1fe903ff13cf51c811e8b)
-        ;
-
-        
-    
-    
-            var marker_686fc04e6fc1b536c95c04059baf9af9 = L.marker(
-                [38.9784, -76.4922],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_eb2519774a0b387039e182d0a0bf3ed3 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_c680c3a106a4f8fe71d16b4e9004ff45 = $(`<div id="html_c680c3a106a4f8fe71d16b4e9004ff45" style="width: 100.0%; height: 100.0%;"><b>Annapolis, MD</b><br>The Choptank<br>Carpaccio’s<br>Osteria 177</div>`)[0];
-            popup_eb2519774a0b387039e182d0a0bf3ed3.setContent(html_c680c3a106a4f8fe71d16b4e9004ff45);
-        
-
-        marker_686fc04e6fc1b536c95c04059baf9af9.bindPopup(popup_eb2519774a0b387039e182d0a0bf3ed3)
-        ;
-
-        
-    
-    
-            var marker_2ffbd7fafe8dba404128332f8b78b456 = L.marker(
-                [41.8781, -87.6298],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_07262b89e4fdfbaa4e7ec8edaa3a6982 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_4eed3bdb4765e28b1b6e255ec84ac73c = $(`<div id="html_4eed3bdb4765e28b1b6e255ec84ac73c" style="width: 100.0%; height: 100.0%;"><b>Chicago, IL</b><br>Bar Mar<br>Girl & The Goat<br>Aba</div>`)[0];
-            popup_07262b89e4fdfbaa4e7ec8edaa3a6982.setContent(html_4eed3bdb4765e28b1b6e255ec84ac73c);
-        
-
-        marker_2ffbd7fafe8dba404128332f8b78b456.bindPopup(popup_07262b89e4fdfbaa4e7ec8edaa3a6982)
-        ;
-
-        
-    
-    
-            var marker_97082e3c3e5f96b84981e80d3ad1f9d9 = L.marker(
-                [43.4643, -80.5204],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_157edad5b04e2c4d8eb7fc46505523e1 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_6d230c4fc528a3491e4a157e1313b452 = $(`<div id="html_6d230c4fc528a3491e4a157e1313b452" style="width: 100.0%; height: 100.0%;"><b>Kitchener-Waterloo, ON, Canada</b><br>Charcoal Steakhouse/Martinis/Del’s<br>Proof Kitchen & Lounge<br>The Bauer Kitchen</div>`)[0];
-            popup_157edad5b04e2c4d8eb7fc46505523e1.setContent(html_6d230c4fc528a3491e4a157e1313b452);
-        
-
-        marker_97082e3c3e5f96b84981e80d3ad1f9d9.bindPopup(popup_157edad5b04e2c4d8eb7fc46505523e1)
-        ;
-
-        
-    
-    
-            var marker_9d9548aac44bccf2fa227736b578d7a4 = L.marker(
-                [40.4406, -79.9959],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_7ec542281030fbf2dab929a3327f9fdd = L.popup({"maxWidth": "100%"});
-
-        
-            var html_27e717634dd400bc5909f7cfbcfe5b76 = $(`<div id="html_27e717634dd400bc5909f7cfbcfe5b76" style="width: 100.0%; height: 100.0%;"><b>Pittsburgh, PA</b><br>The Capital Grille<br>Monterey Bay Fish Grotto<br>Le Mont</div>`)[0];
-            popup_7ec542281030fbf2dab929a3327f9fdd.setContent(html_27e717634dd400bc5909f7cfbcfe5b76);
-        
-
-        marker_9d9548aac44bccf2fa227736b578d7a4.bindPopup(popup_7ec542281030fbf2dab929a3327f9fdd)
-        ;
-
-        
-    
-    
-            var marker_b7d717371c63110b59667bbb8a278329 = L.marker(
-                [33.5186, -86.8104],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_1305ee8b878e2f12ca89b1eeedf9014d = L.popup({"maxWidth": "100%"});
-
-        
-            var html_ef5ba7e4fb84c44c883d1b18b00c718c = $(`<div id="html_ef5ba7e4fb84c44c883d1b18b00c718c" style="width: 100.0%; height: 100.0%;"><b>Birmingham, AL</b><br>Bottega<br>Automatic Seafood<br>Little Betty Steakhouse</div>`)[0];
-            popup_1305ee8b878e2f12ca89b1eeedf9014d.setContent(html_ef5ba7e4fb84c44c883d1b18b00c718c);
-        
-
-        marker_b7d717371c63110b59667bbb8a278329.bindPopup(popup_1305ee8b878e2f12ca89b1eeedf9014d)
-        ;
-
-        
-    
-    
-            var marker_f8a9a1e1509e07673cedde2ab661a19b = L.marker(
-                [39.0997, -94.5786],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_c50f36caf37dfca6480582795ecb092b = L.popup({"maxWidth": "100%"});
-
-        
-            var html_946eae3f4a1522e918261f00b30ac16c = $(`<div id="html_946eae3f4a1522e918261f00b30ac16c" style="width: 100.0%; height: 100.0%;"><b>Kansas City, MO</b><br>Osteria Bianchi<br>Corvino Supper Club<br>Extra Virgin</div>`)[0];
-            popup_c50f36caf37dfca6480582795ecb092b.setContent(html_946eae3f4a1522e918261f00b30ac16c);
-        
-
-        marker_f8a9a1e1509e07673cedde2ab661a19b.bindPopup(popup_c50f36caf37dfca6480582795ecb092b)
-        ;
-
-        
-    
-    
-            var marker_7cd4ded407c1e020cb8a5f13ee2686c6 = L.marker(
-                [44.2619, -88.4154],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_10063268a96b2bf18516aff5631a35c2 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_878c0aecf983eb5fb1962d1f3213a227 = $(`<div id="html_878c0aecf983eb5fb1962d1f3213a227" style="width: 100.0%; height: 100.0%;"><b>Appleton, WI</b><br>Victoria's - Italian<br>Vince Lombardi's Steakhouse<br>Rye - American</div>`)[0];
-            popup_10063268a96b2bf18516aff5631a35c2.setContent(html_878c0aecf983eb5fb1962d1f3213a227);
-        
-
-        marker_7cd4ded407c1e020cb8a5f13ee2686c6.bindPopup(popup_10063268a96b2bf18516aff5631a35c2)
-        ;
-
-        
-    
-    
-            var marker_f4d21b477641b6b79bde349ac059ed69 = L.marker(
-                [45.5152, -122.6784],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_c3029fb518b1446448be35929150b5bc = L.popup({"maxWidth": "100%"});
-
-        
-            var html_d73f57718309e9a385aae9158729d703 = $(`<div id="html_d73f57718309e9a385aae9158729d703" style="width: 100.0%; height: 100.0%;"><b>Portland, OR</b><br>Kaan - Haitian<br>Andina - Peruvian<br>Janken - Japanese</div>`)[0];
-            popup_c3029fb518b1446448be35929150b5bc.setContent(html_d73f57718309e9a385aae9158729d703);
-        
-
-        marker_f4d21b477641b6b79bde349ac059ed69.bindPopup(popup_c3029fb518b1446448be35929150b5bc)
-        ;
-
-        
-    
-    
-            var marker_0a8548008b28dc81aefbaa3a31412a55 = L.marker(
-                [42.5467, -83.2113],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_71210e2c3293c5fc10e264eece0b471c = L.popup({"maxWidth": "100%"});
-
-        
-            var html_f18d76a88dcb5592dad97d9c166592a2 = $(`<div id="html_f18d76a88dcb5592dad97d9c166592a2" style="width: 100.0%; height: 100.0%;"><b>Detroit/Birmingham, MI</b><br>Freya<br>Tallulah<br>Forrest</div>`)[0];
-            popup_71210e2c3293c5fc10e264eece0b471c.setContent(html_f18d76a88dcb5592dad97d9c166592a2);
-        
-
-        marker_0a8548008b28dc81aefbaa3a31412a55.bindPopup(popup_71210e2c3293c5fc10e264eece0b471c)
-        ;
-
-        
-    
-    
-            var marker_9575cadd9680a601960f7d0039fa142b = L.marker(
-                [40.0583, -74.4057],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_1e6656208e8f2aab036bffb00e817e19 = L.popup({"maxWidth": "100%"});
-
-        
-            var html_e288df120e30fc5c032c0e0dc5fc74c1 = $(`<div id="html_e288df120e30fc5c032c0e0dc5fc74c1" style="width: 100.0%; height: 100.0%;"><b>Central New Jersey</b><br>Metuchen Inn<br>Toca Vez<br>Ferraro’s</div>`)[0];
-            popup_1e6656208e8f2aab036bffb00e817e19.setContent(html_e288df120e30fc5c032c0e0dc5fc74c1);
-        
-
-        marker_9575cadd9680a601960f7d0039fa142b.bindPopup(popup_1e6656208e8f2aab036bffb00e817e19)
-        ;
-
-        
-    
-    
-            var marker_2496c076ed603b66231569526ca6e28c = L.marker(
-                [27.9506, -82.4572],
-                {}
-            ).addTo(marker_cluster_98c4eedff8e099e43ba2e83c20c369a0);
-        
-    
-        var popup_82af074581aac829d17e17f7e95737cc = L.popup({"maxWidth": "100%"});
-
-        
-            var html_650a0f59b06a03299a05627d0de7e528 = $(`<div id="html_650a0f59b06a03299a05627d0de7e528" style="width: 100.0%; height: 100.0%;"><b>Tampa, FL</b><br>Oxford Exchange<br>Rocca<br>Predalina</div>`)[0];
-            popup_82af074581aac829d17e17f7e95737cc.setContent(html_650a0f59b06a03299a05627d0de7e528);
-        
-
-        marker_2496c076ed603b66231569526ca6e28c.bindPopup(popup_82af074581aac829d17e17f7e95737cc)
-        ;
-
-        
-    
-</script>
 </html>
